@@ -101,7 +101,7 @@ Visit: **http://localhost:5173/** (Vite) or **http://localhost:3000/** (CRA)
 
 ## 📑 Deliverables
 
-- **Deployed App:** [Live Demo Link Here](#)  
+- **Deployed App:** [Live Demo Link Here](https://talent-flow-ochre.vercel.app/)  
 - **GitHub Repository:** [Repo Link](https://github.com/itzir11/talentFlow)  
 
 ---
