@@ -1,5 +1,6 @@
-import { setupWorker, http, HttpResponse } from "msw"
-import { db, type Job, type Candidate } from "./db"
+import { http, HttpResponse } from "msw"
+import { setupWorker } from "msw/browser"
+import { db, type Job, type Candidate, type Assessment } from "./db"
 
 const API_DELAY_MIN = 200
 const API_DELAY_MAX = 1200
@@ -63,6 +64,7 @@ export const handlers = [
     })
   }),
 
+  // http.post("/api/jobs", ...)
   http.post("/api/jobs", async ({ request }) => {
     await new Promise((resolve) => setTimeout(resolve, randomDelay()))
 
@@ -70,10 +72,21 @@ export const handlers = [
       return HttpResponse.json({ error: "Failed to create job" }, { status: 500 })
     }
 
-    const body = await request.json()
+    const body = ((await request.json()) ?? {}) as Partial<Job>
+
+    const existingJobs = await db.jobs.toArray()
+    const nextOrder = (existingJobs.reduce((max, j) => Math.max(max, j.order), 0) || 0) + 1
+
     const newJob: Job = {
       id: `job-${Date.now()}`,
-      ...body,
+      title: body.title ?? "Untitled Job",
+      slug:
+        body.slug ??
+        (body.title ? body.title.toLowerCase().replace(/\s+/g, "-") : `job-${Date.now()}`),
+      status: body.status ?? "active",
+      tags: body.tags ?? [],
+      order: typeof body.order === "number" ? body.order : nextOrder,
+      description: body.description,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }
@@ -90,7 +103,7 @@ export const handlers = [
     }
 
     const { id } = params
-    const updates = await request.json()
+    const updates = ((await request.json()) ?? {}) as Partial<Job>
 
     await db.jobs.update(id as string, {
       ...updates,
@@ -110,7 +123,10 @@ export const handlers = [
     }
 
     const { id } = params
-    const { fromOrder, toOrder } = await request.json()
+    const { fromOrder, toOrder } = ((await request.json()) ?? {}) as {
+      fromOrder: number
+      toOrder: number
+    }
 
     const jobs = await db.jobs.orderBy("order").toArray()
     const job = jobs.find((j) => j.id === id)
@@ -181,6 +197,7 @@ export const handlers = [
     })
   }),
 
+  // http.post("/api/candidates", ...)
   http.post("/api/candidates", async ({ request }) => {
     await new Promise((resolve) => setTimeout(resolve, randomDelay()))
 
@@ -188,17 +205,21 @@ export const handlers = [
       return HttpResponse.json({ error: "Failed to create candidate" }, { status: 500 })
     }
 
-    const body = await request.json()
+    const body = ((await request.json()) ?? {}) as Partial<Candidate>
     const newCandidate: Candidate = {
       id: `candidate-${Date.now()}`,
-      stage: "applied",
-      ...body,
+      name: body.name ?? "Unnamed Candidate",
+      email: body.email ?? "",
+      stage: body.stage ?? "applied",
+      jobId: body.jobId ?? "",
+      phone: body.phone,
+      resume: body.resume,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }
-
+  
     await db.candidates.add(newCandidate)
-
+  
     // Add timeline entry
     await db.candidateTimeline.add({
       id: `timeline-${Date.now()}`,
@@ -207,7 +228,7 @@ export const handlers = [
       toStage: "applied",
       timestamp: new Date().toISOString(),
     })
-
+  
     return HttpResponse.json(newCandidate)
   }),
 
@@ -219,12 +240,11 @@ export const handlers = [
     }
 
     const { id } = params
-    const updates = await request.json()
+    const updates = ((await request.json()) ?? {}) as Partial<Candidate>
 
     const candidate = await db.candidates.get(id as string)
 
     if (updates.stage && candidate && updates.stage !== candidate.stage) {
-      // Add timeline entry for stage change
       await db.candidateTimeline.add({
         id: `timeline-${Date.now()}`,
         candidateId: id as string,
@@ -265,6 +285,7 @@ export const handlers = [
     return HttpResponse.json(assessment || null)
   }),
 
+  // http.put("/api/assessments/:jobId", ...)
   http.put("/api/assessments/:jobId", async ({ request, params }) => {
     await new Promise((resolve) => setTimeout(resolve, randomDelay()))
 
@@ -273,7 +294,7 @@ export const handlers = [
     }
 
     const { jobId } = params
-    const body = await request.json()
+    const body = ((await request.json()) ?? {}) as Partial<Assessment>
 
     const existing = await db.assessments.get({ jobId: jobId as string })
 
@@ -285,10 +306,11 @@ export const handlers = [
       const updated = await db.assessments.get(existing.id)
       return HttpResponse.json(updated)
     } else {
-      const newAssessment = {
+      const newAssessment: Assessment = {
         id: `assessment-${Date.now()}`,
         jobId: jobId as string,
-        ...body,
+        title: body.title ?? "Assessment",
+        sections: body.sections ?? [],
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       }
@@ -305,7 +327,11 @@ export const handlers = [
     }
 
     const { jobId } = params
-    const body = await request.json()
+    const body = ((await request.json()) ?? {}) as {
+      assessmentId: string
+      candidateId: string
+      responses: Record<string, any>
+    }
 
     const response = {
       id: `response-${Date.now()}`,
